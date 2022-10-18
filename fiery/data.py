@@ -432,7 +432,8 @@ def prepare_dataloaders(cfg, return_dataset=False):
 
     if cfg.DATASET.NAME == 'nuscenes':
         # 28130 train and 6019 val
-        dataroot = os.path.join(cfg.DATASET.DATAROOT, version)
+        # dataroot = os.path.join(cfg.DATASET.DATAROOT, version)
+        dataroot = cfg.DATASET.DATAROOT
         nusc = NuScenes(version='v1.0-{}'.format(cfg.DATASET.VERSION), dataroot=dataroot, verbose=False)
     elif cfg.DATASET.NAME == 'lyft':
         # train contains 22680 samples
