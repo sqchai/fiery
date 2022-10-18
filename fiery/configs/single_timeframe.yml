@@ -2,7 +2,7 @@ TAG: 'single_timeframe_model'
 
 GPUS: [0]
 
-BATCHSIZE: 4
+BATCHSIZE: 8
 
 TIME_RECEPTIVE_FIELD: 1
 N_FUTURE_FRAMES: 0
