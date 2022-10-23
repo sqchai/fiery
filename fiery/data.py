@@ -40,6 +40,8 @@ class FuturePredictionDataset(torch.utils.data.Dataset):
 
         self.mode = 'train' if self.is_train else 'val'
 
+        self.receptive_field = cfg.TIME_RECEPTIVE_FIELD
+        self.n_future = cfg.N_FUTURE_FRAMES
         self.sequence_length = cfg.TIME_RECEPTIVE_FIELD + cfg.N_FUTURE_FRAMES
 
         self.scenes = self.get_scenes()
@@ -66,6 +68,9 @@ class FuturePredictionDataset(torch.utils.data.Dataset):
 
         # Spatial extent in bird's-eye view, in meters
         self.spatial_extent = (self.cfg.LIFT.X_BOUND[1], self.cfg.LIFT.Y_BOUND[1])
+
+        # if first reframe box then render
+        self.reframe_before_render = cfg.REFRAME_BEFORE_RENDER
 
     def get_scenes(self):
 
@@ -285,6 +290,52 @@ class FuturePredictionDataset(torch.utils.data.Dataset):
 
         return segmentation, instance, z_position, instance_map, attribute_label
 
+    def get_reframed_birds_eye_view_label(self, rec, ref_pose, instance_map):
+        """
+        instead of returning the BEV label centered at ego car frame at queried timestamp,
+        this function returns the labels centered at present ego car frame.
+        Warping is done at bbox level before rendering
+        """
+        ref_trans, ref_rot = ref_pose['trans'], ref_pose['rot']
+
+        segmentation = np.zeros((self.bev_dimension[0], self.bev_dimension[1]))
+        # Background is ID 0
+        instance = np.zeros((self.bev_dimension[0], self.bev_dimension[1]))
+        z_position = np.zeros((self.bev_dimension[0], self.bev_dimension[1]))
+        attribute_label = np.zeros((self.bev_dimension[0], self.bev_dimension[1]))
+
+        for annotation_token in rec['anns']:
+            # Filter out all non vehicle instances
+            annotation = self.nusc.get('sample_annotation', annotation_token)
+
+            if not self.is_lyft:
+                # NuScenes filter
+                if 'vehicle' not in annotation['category_name']:
+                    continue
+                if self.cfg.DATASET.FILTER_INVISIBLE_VEHICLES and int(annotation['visibility_token']) == 1:
+                    continue
+            else:
+                # Lyft filter
+                if annotation['category_name'] not in ['bus', 'car', 'construction_vehicle', 'trailer', 'truck']:
+                    continue
+
+            if annotation['instance_token'] not in instance_map:
+                instance_map[annotation['instance_token']] = len(instance_map) + 1
+            instance_id = instance_map[annotation['instance_token']]
+
+            if not self.is_lyft:
+                instance_attribute = int(annotation['visibility_token'])
+            else:
+                instance_attribute = 0
+
+            poly_region, z = self._get_poly_region_in_image(annotation, ref_trans, ref_rot)
+            cv2.fillPoly(instance, [poly_region], instance_id)
+            cv2.fillPoly(segmentation, [poly_region], 1.0)
+            cv2.fillPoly(z_position, [poly_region], z)
+            cv2.fillPoly(attribute_label, [poly_region], instance_attribute)
+
+        return segmentation, instance, z_position, instance_map, attribute_label
+
     def _get_poly_region_in_image(self, instance_annotation, ego_translation, ego_rotation):
         box = Box(
             instance_annotation['translation'], instance_annotation['size'], Quaternion(instance_annotation['rotation'])
@@ -302,6 +353,16 @@ class FuturePredictionDataset(torch.utils.data.Dataset):
     def get_label(self, rec, instance_map):
         segmentation_np, instance_np, z_position_np, instance_map, attribute_label_np = \
             self.get_birds_eye_view_label(rec, instance_map)
+        segmentation = torch.from_numpy(segmentation_np).long().unsqueeze(0).unsqueeze(0)
+        instance = torch.from_numpy(instance_np).long().unsqueeze(0)
+        z_position = torch.from_numpy(z_position_np).float().unsqueeze(0).unsqueeze(0)
+        attribute_label = torch.from_numpy(attribute_label_np).long().unsqueeze(0).unsqueeze(0)
+
+        return segmentation, instance, z_position, instance_map, attribute_label
+
+    def get_reframed_label(self, rec, ref_pose, instance_map):
+        segmentation_np, instance_np, z_position_np, instance_map, attribute_label_np = \
+            self.get_reframed_birds_eye_view_label(rec, ref_pose, instance_map)
         segmentation = torch.from_numpy(segmentation_np).long().unsqueeze(0).unsqueeze(0)
         instance = torch.from_numpy(instance_np).long().unsqueeze(0)
         z_position = torch.from_numpy(z_position_np).float().unsqueeze(0).unsqueeze(0)
@@ -376,12 +437,23 @@ class FuturePredictionDataset(torch.utils.data.Dataset):
             data[key] = []
 
         instance_map = {}
+
+        # retrive present pose
+        present_index = index + self.receptive_field - 1
+        present_rec = self.ixes[present_index]
+        present_trans, present_rot = self._get_top_lidar_pose(present_rec)
+        present_pose = {'trans': present_trans, 'rot': present_rot}
+
         # Loop over all the frames in the sequence.
         for index_t in self.indices[index]:
             rec = self.ixes[index_t]
 
             images, intrinsics, extrinsics = self.get_input_data(rec)
-            segmentation, instance, z_position, instance_map, attribute_label = self.get_label(rec, instance_map)
+
+            if self.reframe_before_render:
+                segmentation, instance, z_position, instance_map, attribute_label = self.get_reframed_label(rec, present_pose, instance_map)
+            else:
+                segmentation, instance, z_position, instance_map, attribute_label = self.get_label(rec, instance_map)
 
             future_egomotion = self.get_future_egomotion(rec, index_t)
 
@@ -419,6 +491,7 @@ class FuturePredictionDataset(torch.utils.data.Dataset):
             data['instance'], data['future_egomotion'],
             num_instances=len(instance_map), ignore_index=self.cfg.DATASET.IGNORE_INDEX, subtract_egomotion=True,
             spatial_extent=self.spatial_extent,
+            reframed_to_present=self.reframe_before_render,
         )
         data['centerness'] = instance_centerness
         data['offset'] = instance_offset

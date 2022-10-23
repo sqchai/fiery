@@ -46,6 +46,8 @@ _C.PRETRAINED = CN()
 _C.PRETRAINED.LOAD_WEIGHTS = False
 _C.PRETRAINED.PATH = ''
 
+_C.REFRAME_BEFORE_RENDER = False  # if reframe bbox before rendering BEV GT
+
 _C.DATASET = CN()
 _C.DATASET.DATAROOT = './nuscenes/'
 _C.DATASET.VERSION = 'trainval'

@@ -1,0 +1,31 @@
+TAG: 'baseline'
+
+GPUS: [0]
+
+EPOCHS: 2
+BATCHSIZE: 3
+PRECISION: 16
+
+TIME_RECEPTIVE_FIELD: 3
+N_FUTURE_FRAMES: 4
+
+PRETRAINED:
+  LOAD_WEIGHTS: True
+  PATH: 'ckpts/custom_reframe_lss_10_eps.ckpt'
+
+PROBABILISTIC:
+  ENABLED: False
+
+MODEL:
+  BN_MOMENTUM: 0.05
+  TEMPORAL_MODEL:
+    NAME: 'temporal_block'
+    INPUT_EGOPOSE: True
+
+INSTANCE_FLOW:
+  ENABLED: False
+
+OPTIMIZER:
+  LR: 3e-4
+
+N_WORKERS: 15

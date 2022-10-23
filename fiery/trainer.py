@@ -75,7 +75,11 @@ class TrainingModule(pl.LightningModule):
         future_egomotion = batch['future_egomotion']
 
         # Warp labels
-        labels, future_distribution_inputs = self.prepare_future_labels(batch)
+        if self.cfg.REFRAME_BEFORE_RENDER:
+            # no need to warp
+            labels, future_distribution_inputs = self.prepare_future_labels_reframed(batch)
+        else:
+            labels, future_distribution_inputs = self.prepare_future_labels(batch)
 
         # Forward pass
         output = self.model(
@@ -183,6 +187,45 @@ class TrainingModule(pl.LightningModule):
             ).contiguous()
             labels['flow'] = instance_flow_labels
 
+            future_distribution_inputs.append(instance_flow_labels)
+
+        if len(future_distribution_inputs) > 0:
+            future_distribution_inputs = torch.cat(future_distribution_inputs, dim=2)
+
+        return labels, future_distribution_inputs
+
+    def prepare_future_labels_reframed(self, batch):
+        """
+        when loaded GTs are already in present frame
+        """
+        labels = {}
+        future_distribution_inputs = []
+
+        segmentation_labels = batch['segmentation']
+        instance_center_labels = batch['centerness']
+        instance_offset_labels = batch['offset']
+        instance_flow_labels = batch['flow']
+        gt_instance = batch['instance']
+
+        segmentation_labels = segmentation_labels[:, (self.model.receptive_field - 1):].long().contiguous()
+        labels['segmentation'] = segmentation_labels
+        future_distribution_inputs.append(segmentation_labels)
+
+        gt_instance = gt_instance[:, (self.model.receptive_field - 1):].long().contiguous()
+        labels['instance'] = gt_instance
+
+        instance_center_labels = instance_center_labels[:, (self.model.receptive_field - 1):].contiguous()
+        labels['centerness'] = instance_center_labels
+
+        instance_offset_labels = instance_offset_labels[:, (self.model.receptive_field- 1):].contiguous()
+        labels['offset'] = instance_offset_labels
+
+        future_distribution_inputs.append(instance_center_labels)
+        future_distribution_inputs.append(instance_offset_labels)
+
+        if self.cfg.INSTANCE_FLOW.ENABLED:
+            instance_flow_labels = instance_flow_labels[:, (self.model.receptive_field - 1):].contiguous()
+            labels['flow'] = instance_flow_labels
             future_distribution_inputs.append(instance_flow_labels)
 
         if len(future_distribution_inputs) > 0:

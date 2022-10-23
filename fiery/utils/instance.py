@@ -10,7 +10,8 @@ from fiery.utils.geometry import mat2pose_vec, pose_vec2mat, warp_features
 
 # set ignore index to 0 for vis
 def convert_instance_mask_to_center_and_offset_label(instance_img, future_egomotion, num_instances, ignore_index=255,
-                                                     subtract_egomotion=True, sigma=3, spatial_extent=None):
+                                                     subtract_egomotion=True, sigma=3, spatial_extent=None,
+                                                     reframed_to_present=False):
     seq_len, h, w = instance_img.shape
     center_label = torch.zeros(seq_len, 1, h, w)
     offset_label = ignore_index * torch.ones(seq_len, 2, h, w)
@@ -60,7 +61,10 @@ def convert_instance_mask_to_center_and_offset_label(instance_img, future_egomot
                 #     cur_pt = warp_points(cur_pt, future_egomotion_inv[t - 1])
                 # cur_pt = cur_pt.squeeze(0)
 
-                warped_instance_mask = warped_instance_seg[t] == instance_id
+                if reframed_to_present:
+                    warped_instance_mask = instance_img[t] == instance_id
+                else:
+                    warped_instance_mask = warped_instance_seg[t] == instance_id
                 if warped_instance_mask.sum() > 0:
                     warped_xc = x[warped_instance_mask].mean().round()
                     warped_yc = y[warped_instance_mask].mean().round()

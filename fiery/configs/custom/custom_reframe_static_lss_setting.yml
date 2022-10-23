@@ -1,0 +1,11 @@
+_BASE_: '../single_timeframe.yml'
+
+TAG: 'custom_reframe_lift_splat_setting'
+
+DATASET:
+  FILTER_INVISIBLE_VEHICLES: False
+
+EPOCHS: 10
+BATCHSIZE: 6
+
+REFRAME_BEFORE_RENDER: True

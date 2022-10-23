@@ -20,7 +20,8 @@ def main():
     if cfg.PRETRAINED.LOAD_WEIGHTS:
         # Load single-image instance segmentation model.
         pretrained_model_weights = torch.load(
-            os.path.join(cfg.DATASET.DATAROOT, cfg.PRETRAINED.PATH), map_location='cpu'
+            # os.path.join(cfg.DATASET.DATAROOT, cfg.PRETRAINED.PATH), map_location='cpu'
+            os.path.join(os.path.curdir, cfg.PRETRAINED.PATH), map_location='cpu'
         )['state_dict']
 
         model.load_state_dict(pretrained_model_weights, strict=False)
